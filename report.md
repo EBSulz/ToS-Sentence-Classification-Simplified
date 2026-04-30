@@ -106,7 +106,7 @@ To support retrieval of similar corpus sentences for a given query, two embeddin
 - **TF-IDF cosine similarity**: The same TF-IDF vectorizer used in classification, fit on the full corpus. Vectors are L2-normalised; cosine similarity reduces to a dot product.
 - **Sentence-BERT (SBERT)**: The `all-MiniLM-L6-v2` model from `sentence-transformers`, producing dense 384-dimensional embeddings. Vectors are L2-normalised by the model.
 
-Retrieval uses brute-force cosine similarity over the full corpus matrix (~9,400 sentences). At this scale, numpy matrix multiplication completes in milliseconds, so no approximate nearest-neighbour index is needed.
+Retrieval uses brute-force cosine similarity over the full corpus matrix (~9,400 sentences). At this scale, sparse matrix cosine similarity completes in milliseconds, so no approximate nearest-neighbour index is needed.
 
 ### 4.2 Evaluation Protocol
 
@@ -162,7 +162,7 @@ On startup, the service loads the full corpus, builds the embedding index, and t
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Similarity backend | Numpy brute-force cosine | Sufficient for ~9,400 sentences; avoids FAISS as an additional dependency |
+| Similarity backend | Sparse brute-force cosine | Sufficient for ~9,400 sentences; avoids FAISS as an additional dependency |
 | Default embedding | TF-IDF | Higher retrieval quality per experiment (MAP 0.695 vs 0.675); zero model download; instant startup |
 | Production classifier | C2-SVM | Best F1 (0.754); produces per-category predictions without additional cost |
 | Model persistence | joblib | Native scikit-learn serialisation; trivially handles sparse vectorizers and LinearSVC |
