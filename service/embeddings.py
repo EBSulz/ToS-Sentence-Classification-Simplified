@@ -37,13 +37,16 @@ class TFIDFEmbedder(BaseEmbedder):
         self._vec.fit(cleaned)
         self._fitted = True
 
-    def encode(self, sentences: list[str]) -> np.ndarray:
+    def encode(self, sentences: list[str]):  # returns scipy sparse CSR
         if not self._fitted:
             raise RuntimeError("TFIDFEmbedder must be fit before encode()")
         cleaned = [clean(s) for s in sentences]
         sparse = self._vec.transform(cleaned)
-        dense = sparse.toarray().astype(np.float32)
-        return normalize(dense, norm="l2")
+        return normalize(sparse, norm="l2")  # stays sparse — no .toarray()
+
+    def encode_one(self, sentence: str) -> np.ndarray:
+        row = self.encode([sentence])  # sparse (1, dim)
+        return np.asarray(row.todense(), dtype=np.float32)[0]  # dense (dim,)
 
 
 class SBERTEmbedder(BaseEmbedder):

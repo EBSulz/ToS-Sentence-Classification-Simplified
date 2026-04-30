@@ -26,7 +26,7 @@ class CorpusIndex:
     def __init__(self, embedder: BaseEmbedder) -> None:
         self._embedder = embedder
         self._entries: list[_Entry] = []
-        self._matrix: np.ndarray | None = None  # shape (N, dim), L2-normalised
+        self._matrix = None  # sparse CSR (tfidf) or dense ndarray (sbert), shape (N, dim), L2-normalised
 
     # ── Build ─────────────────────────────────────────────────────────────────
 
@@ -75,7 +75,7 @@ class CorpusIndex:
         q_vec = self._embedder.encode_one(query)  # shape (dim,)
 
         # Cosine similarity = dot product (both sides L2-normalised)
-        scores = self._matrix @ q_vec  # shape (N,)
+        scores = np.asarray(self._matrix @ q_vec).ravel()  # shape (N,)
 
         top_idx = np.argpartition(scores, -top_k)[-top_k:]
         top_idx = top_idx[np.argsort(scores[top_idx])[::-1]]
