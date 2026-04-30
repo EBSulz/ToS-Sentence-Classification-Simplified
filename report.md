@@ -36,21 +36,21 @@ The class imbalance is significant at roughly 9:1 (fair to unfair). All models a
 
 ### 3.1 Feature Representation
 
-All classifiers use **TF-IDF with unigrams and bigrams** as the feature representation (`ngram_range=(1,2)`, `sublinear_tf=True`, `min_df=2`, `max_features=50,000`). This is consistent with the CLAUDETTE paper, which found that lexical bag-of-words features outperform both syntactic tree kernels and neural embeddings for this domain. The intuition is straightforward: unfair clauses share a distinctive vocabulary — phrases like *"at our sole discretion"*, *"we reserve the right"*, and *"in no event shall"* — that is highly discriminative and well-captured by n-gram statistics.
+All classifiers use **TF-IDF with unigrams and bigrams** as the feature representation (`ngram_range=(1,2)`, `sublinear_tf=True`, `min_df=2`, `max_features=50,000`). This is consistent with the CLAUDETTE paper, which found that lexical bag-of-words features outperform both syntactic tree kernels and neural embeddings for this domain. The logic is: unfair clauses share a distinctive vocabulary, phrases like *"at our sole discretion"*, *"we reserve the right"*, and *"in no event shall"*, that is highly discriminative and well-captured by n-gram statistics.
 
 ### 3.2 Classification Strategies
 
 Two strategies were implemented, corresponding to classifiers C1 and C2 in the CLAUDETTE paper:
 
-- **C1 — Single classifier**: A single binary classifier trained on the general unfairness label. One model per fold, predicting fair or unfair for each sentence.
+- **C1) Single classifier**: A single binary classifier trained on the general unfairness label. One model per fold, predicting fair or unfair for each sentence.
 
-- **C2 — Combined classifiers (OR rule)**: Eight binary classifiers, one per unfairness category, each trained on its corresponding category label. A sentence is predicted as unfair if *any* of the eight classifiers fires. This approach allows each classifier to specialise on the lexical patterns of one category, and the OR combination recovers the general unfairness prediction.
+- **C2) Combined classifiers (OR rule)**: Eight binary classifiers, one per unfairness category, each trained on its corresponding category label. A sentence is predicted as unfair if *any* of the eight classifiers flags that sentence as unfair. This approach allows each classifier to specialise on the lexical patterns of one category, and the OR combination recovers the general unfairness prediction.
 
 ### 3.3 Handling Class Imbalance
 
 No oversampling (e.g. SMOTE) was applied. Instead, cost-sensitive weighting was used throughout:
 
-- **LinearSVC, Logistic Regression, Random Forest**: `class_weight='balanced'`, which automatically scales the loss penalty by `n_samples / (n_classes × n_samples_per_class)`. At a 9:1 ratio, the minority class receives approximately 9× the weight of the majority class during training.
+- **SVM, Logistic Regression, Random Forest**: `class_weight='balanced'`, which automatically scales the loss penalty by `n_samples / (n_classes × n_samples_per_class)`. At a 9:1 ratio, the minority class receives approximately 9x the weight of the majority class during training.
 - **XGBoost**: `scale_pos_weight = n_negatives / n_positives`, computed from the actual training fold distribution. This is XGBoost's equivalent mechanism.
 
 SMOTE was not used because interpolating between sparse TF-IDF vectors does not produce semantically meaningful synthetic sentences, and cost-sensitive weighting is simpler and equally effective in high-dimensional sparse spaces.
@@ -89,7 +89,7 @@ The reported metric is **macro-averaged Precision, Recall, and F1** across all e
 
 **Logistic Regression** achieves the highest recall (0.868 in C2) but at the cost of substantially lower precision (0.613). It classifies a large number of fair sentences as unfair, making it less useful in practice unless recall is the dominant concern.
 
-**Random Forest** is the precision champion (0.925 in C2) but with catastrophically low recall (0.253). Despite `class_weight='balanced'`, the ensemble of decision trees produces an overly conservative model that classifies nearly everything as fair. This is a known limitation of tree-based ensembles in very high-dimensional sparse feature spaces — individual trees cannot effectively split on sparse TF-IDF features the way linear models can.
+**Random Forest** has the best precision (0.925 in C2) of all models, but also the worst recall (0.253). Despite `class_weight='balanced'`, the ensemble of decision trees produces an overly conservative model that classifies nearly everything as fair. This is a known limitation of tree-based ensembles in very high-dimensional sparse feature spaces — individual trees cannot effectively split on sparse TF-IDF features the way linear models can.
 
 **XGBoost** consistently underperforms both SVM and Logistic Regression across both strategies. Like Random Forest, gradient boosting over decision trees struggles with the sparsity of TF-IDF representations.
 
@@ -125,11 +125,11 @@ The 50 documents are split 80/20 at the document level (40 train, 10 test, rando
 
 ### 4.4 Analysis
 
-**TF-IDF outperforms SBERT on all three metrics.** This result is counter-intuitive at first glance — SBERT is a powerful semantic model trained on hundreds of millions of sentence pairs — but it is entirely consistent with the classification findings.
+**TF-IDF outperforms SBERT on all three metrics.** This result is counter-intuitive at first glance. SBERT is a powerful semantic model trained on hundreds of millions of sentence pairs, but it is entirely consistent with the classification findings.
 
-The explanation is domain-specific: identifying unfair clauses is fundamentally a lexical task. A known unfair clause retrieved by a query tends to share the exact same keywords and phrases (*"terminate"*, *"modify"*, *"discretion"*, *"reserve the right"*). SBERT retrieves sentences that are semantically paraphrased — capturing the general *meaning* — but in a domain where the specific legal phrasing carries the signal, semantic generalisation actually hurts precision.
+The explanation is domain-specific: identifying unfair clauses is fundamentally a lexical task. A known unfair clause retrieved by a query tends to share the exact same keywords and phrases (*"terminate"*, *"modify"*, *"discretion"*, *"reserve the right"*). SBERT retrieves sentences that are semantically paraphrased, capturing the general *meaning*, but in a domain where the specific legal phrasing carries the signal, semantic generalisation actually hurts precision.
 
-SBERT's strengths — cross-lingual transfer, paraphrase robustness, understanding of sentence structure — provide no advantage in a monolingual, keyword-driven legal corpus. TF-IDF's strength, which is sensitivity to exact term frequency, is precisely what the task rewards.
+SBERT's strengths (cross-lingual transfer, paraphrase robustness, understanding of sentence structure) provide no advantage in a monolingual, keyword-driven legal corpus. TF-IDF's strength, which is sensitivity to exact term frequency, is precisely what the task rewards.
 
 **TF-IDF was selected as the default embedding method** for the service. SBERT remains available as an optional alternative via the `EMBEDDING_METHOD=sbert` environment variable for use cases where paraphrase robustness is more important than retrieval precision.
 
@@ -156,7 +156,7 @@ The API exposes four endpoints:
 | `POST /classify` | C2-SVM prediction with per-category breakdown |
 | `POST /analyze` | Combined: classification result + similar sentences |
 
-On startup, the service loads the full corpus, builds the embedding index, and trains — or loads from a disk cache — the eight SVM classifiers. First startup takes approximately 10–20 seconds; subsequent restarts load cached models from `data/models/` in under a second. The Streamlit container waits for the API healthcheck to pass before becoming available.
+On startup, the service loads the full corpus, builds the embedding index, and trains or loads from a disk cache the eight SVM classifiers. First startup takes approximately 10–20 seconds. Subsequent restarts load cached models from `data/models/` in under a second. The Streamlit container waits for the API healthcheck to pass before becoming available.
 
 ### 5.2 Key Design Decisions
 
@@ -179,8 +179,6 @@ On startup, the service loads the full corpus, builds the embedding index, and t
 **Retrieval does not generalise across phrasings.** Because TF-IDF is purely lexical, a user who queries with different phrasing than what appears in the corpus will receive lower-quality results. SBERT partially mitigates this at the cost of lower precision, and is available as a swap-in via environment variable.
 
 **Corpus size is limited.** The 50-document corpus is representative but small. The service is most useful for finding precedents within this curated set, not for open-domain legal reasoning.
-
-**Category fairness granularity is collapsed.** The original annotations distinguish three degrees of (un)fairness — clearly fair, potentially unfair, and clearly unfair. These were collapsed to a binary label for classification. Fine-grained scoring was out of scope.
 
 ---
 
@@ -208,6 +206,11 @@ docker-compose up
 # Run the embedding comparison experiment
 python scripts/embedding_experiment.py
 ```
+
+
+In case of problems running the code, the project was also deployed on streamlit cloud community and the API was deployed using Render. Since it has a cold-start, the first time using the app on streamlit, the API may take a few seconds to be up and running. It is recommended to make a request to activate it and wait a few seconds.
+
+The webapp can be accessed via the following link: https://tos-sentence-classification.streamlit.app/
 
 ---
 
